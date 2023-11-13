@@ -1,16 +1,6 @@
-import sys
-
 import pytorchvideo.models.resnet
-import torch
-import pandas as pd
 from torch import nn
-import os
-
-import torch
 from torch.utils.data import DataLoader
-import torchvision.transforms as transforms
-import json
-import numpy as np
 
 import wandb
 import torch
@@ -35,6 +25,25 @@ def make_kinetics_resnet():
         norm=nn.BatchNorm3d,
         activation=nn.ReLU,
     )
+    spatial_size = 224
+    temporal_size = 16
+    # embed_dim_mul = [[1, 2.0], [3, 2.0], [14, 2.0]]
+    # atten_head_mul = [[1, 2.0], [3, 2.0], [14, 2.0]]
+    # pool_q_stride_size = [[1, 1, 2, 2], [3, 1, 2, 2], [14, 1, 2, 2]]
+    # pool_kv_stride_adaptive = [1, 8, 8]
+    # pool_kvq_kernel = [3, 3, 3]
+    head_num_classes = 8
+    r = pytorchvideo.models.vision_transformers.create_multiscale_vision_transformers(
+        input_channels=2,  # RGB input from Kinetics
+        spatial_size=spatial_size,
+        temporal_size=temporal_size,
+        # embed_dim_mul=embed_dim_mul,
+        # atten_head_mul=atten_head_mul,
+        # pool_q_stride_size=pool_q_stride_size,
+        # pool_kv_stride_adaptive=pool_kv_stride_adaptive,
+        # pool_kvq_kernel=pool_kvq_kernel,
+        head_num_classes=head_num_classes,
+    )
     # x = pytorchvideo.models.x3d.create_x3d_stem(
     #     input_channel=2,  # RGB input from Kinetics
     #     model_depth=50,  # For the tutorial let's just use a 50 layer network
@@ -42,11 +51,13 @@ def make_kinetics_resnet():
     #     norm=nn.BatchNorm3d,
     #     activation=nn.ReLU,
     # )
-    return n
+    return r
+
 
 
 # %%
 #
+
 net = make_kinetics_resnet()
 # %%
 
@@ -71,7 +82,7 @@ num_epochs = 1000
 # %%
 
 # Initialize Weights and Biases
-wandb.init(project="your_project_name", name="training_name")
+wandb.init(project="HAND_OBJECT", name="vit_2")
 # Initialize a Progress instance for tracking progress
 progress = Progress()
 # Create a task for training progress
@@ -90,6 +101,7 @@ for epoch in range(num_epochs):
         for inputs, labels in train_loader:
             inputs = inputs.to("cuda:1")
             inputs = inputs.permute(0, 2, 1, 3, 4)
+            inputs = torch.nn.functional.interpolate(inputs, size=(16, 224, 224), mode='trilinear', align_corners=False)
             labels = labels.to("cuda:1")
             optimizer.zero_grad()  # Zero the parameter gradients
             outputs = net(inputs)
@@ -119,6 +131,12 @@ for epoch in range(num_epochs):
         with torch.no_grad():  # Disable gradient computation during validation
             for inputs, labels in val_loader:
                 inputs = inputs.to("cuda:1")
+                # Assuming we want to crop to 224x224 from the center
+                start_height = (inputs.shape[2] - 224) // 2
+                start_width = (inputs.shape[3] - 224) // 2
+
+                # Crop the tensor
+                inputs = inputs[:, :, start_height:start_height + 224, start_width:start_width + 224]
                 inputs = inputs.permute(0, 2, 1, 3, 4)
                 labels = labels.to("cuda:1")
                 outputs = net(inputs)
